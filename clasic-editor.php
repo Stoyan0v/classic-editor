@@ -5,7 +5,7 @@
  * Plugin Name: Classic Editor
  * Plugin URI:  https://wordpress.org/plugins/classic-editor/
  * Description: Enables the WordPress classic editor and the old-style Edit Post screen with TinyMCE, Meta Boxes, etc. Supports the older plugins that extend this screen.
- * Version:     1.3
+ * Version:     1.3-alpha
  * Author:      WordPress Contributors
  * Author URI:  https://github.com/WordPress/classic-editor/
  * License:     GPLv2 or later
@@ -41,7 +41,13 @@ class Classic_Editor {
 		register_activation_hook( __FILE__, array( __CLASS__, 'activate' ) );
 		register_uninstall_hook( __FILE__, array( __CLASS__, 'uninstall' ) );
 
+		add_action( 'after_setup_theme', array( __CLASS__, 'load_textdomain' ), 9999 );
+
 		$settings = self::get_settings();
+
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_plugin_scripts' ) );
+
+		add_action( 'wp_ajax_dismiss_5_0_0_notice', array( __CLASS__, 'hide_5_0_0_notice' ) );
 
 		if ( is_multisite() ) {
 			add_action( 'wpmu_options', array( __CLASS__, 'network_settings' ) );
@@ -127,9 +133,71 @@ class Classic_Editor {
 			remove_filter( 'display_post_states', 'gutenberg_add_gutenberg_post_state' );
 			remove_action( 'edit_form_top', 'gutenberg_remember_classic_editor_when_saving_posts' );
 		}
+
+	}
+
+		/**
+	 * Load the plugin textdomain.
+	 *
+	 * @since 1.0.0
+	 */
+	public static function load_textdomain() {
+		load_plugin_textdomain(
+			'classic-editor',
+			false,
+			basename( dirname( __FILE__ ) ) . '/languages'
+		);
+	}
+
+	public static function enqueue_plugin_scripts(){
+		wp_enqueue_script(
+			'clasic-editor-notices',
+			plugins_url( 'js/notices.js', __FILE__ ),
+			array( 'jquery' ),
+			self::plugin_version,
+			true
+		);
+	}
+
+	/**
+	 * Hide the global 5.0.0 notice.
+	 */
+	public function hide_5_0_0_notice() {
+		update_option( 'siteground_optimizer_5_0_0_notice', 0 );
+	}
+
+
+	public static function admin_notice_5_0_0() {
+		$current_screen = get_current_screen();
+
+		// Get the option.
+		$show_notice = (int) get_option( 'siteground_optimizer_5_0_0_notice', 1 );
+
+		if (
+			'options-writing' === $current_screen->base ||
+			! current_user_can( 'edit_posts' ) ||
+			0 === $show_notice
+		) {
+			return;
+		}
+
+		$class = 'notice notice-error notice-clasic-editor';
+
+		$message = sprintf(
+			__(
+				'You are now using WordPress 5. It introduces a brand new block based editor. Take a look at all its exciting features %1$s. As part of the update the previous classic editor has been added to your installation as a plugin. This will allow you to use it again, if you need, and will make the transition to the new block experience smoother. Explore Classic Editor settings %2$s.<button type="button" class="notice-dismiss dismiss-clasic-editor-notice" data-link="%3$s"><span class="screen-reader-text">Dismiss this notice.</span></button>',
+				'classic-editor'
+			),
+			"<a href='" . admin_url( 'about.php' ) . "'>" . __('here', 'classic-editor') . "</a>",
+			'<a href="options-writing.php#classic-editor-options">' . __('here', 'classic-editor') . '</a>',
+			admin_url( 'admin-ajax.php?action=dismiss_5_0_0_notice' )
+		);
+
+		printf( '<div class="%1$s" style="position: relative; padding: 1px 12px;"><p style="max-width: 95%%;">%2$s</p></div>', esc_attr( $class ), $message ); 
 	}
 
 	public static function remove_gutenberg_hooks( $remove = 'all' ) {
+
 		remove_action( 'admin_menu', 'gutenberg_menu' );
 		remove_action( 'admin_init', 'gutenberg_redirect_demo' );
 
@@ -200,8 +268,8 @@ class Classic_Editor {
 
 		if ( is_multisite() ) {
 			$defaults = array(
-				'editor' => 'classic',
-				'allow-users' => false,
+				'editor' => 'block',
+				'allow-users' => true,
 			);
 
 			/**
@@ -482,7 +550,7 @@ class Classic_Editor {
 			return;
 		}
 
-		$message = __( 'The Classic Editor plugin prevents use of the new Block Editor.', 'classic-editor' );
+		$message = __( 'You may use the classic editor together with the block editor thanks to the Classic Editor Plugin.', 'classic-editor' );
 
 		if ( current_user_can( 'manage_options' ) ) {
 			$message .= ' ' . sprintf( __( 'Change the %1$sClassic Editor settings%2$s.', 'classic-editor' ), '<a href="options-writing.php#classic-editor-options">', '</a>' );
@@ -884,11 +952,11 @@ class Classic_Editor {
 	 */
 	public static function activate() {
 		if ( is_multisite() ) {
-			add_network_option( null, 'classic-editor-allow-sites', 'disallow' );
+			add_network_option( null, 'classic-editor-allow-sites', 'allow' );
 		}
 
-		add_option( 'classic-editor-replace', 'classic' );
-		add_option( 'classic-editor-allow-users', 'disallow' );
+		add_option( 'classic-editor-replace', 'block' );
+		add_option( 'classic-editor-allow-users', 'allow' );
 	}
 
 	/**
@@ -905,5 +973,7 @@ class Classic_Editor {
 }
 
 add_action( 'plugins_loaded', array( 'Classic_Editor', 'init_actions' ) );
+
+add_action( 'in_admin_header', array( 'Classic_Editor', 'admin_notice_5_0_0' ) );
 
 endif;
